@@ -1,0 +1,11 @@
+greenlet==1.1.2
+importlib-metadata==4.12.0
+packaging==21.3
+psycopg2-binary==2.9.3
+pyparsing==3.0.9
+SQLAlchemy==1.4.40
+sqlalchemy-redshift==0.8.11
+zipp==3.8.1
+logzio-python-handler
+urllib3==1.26.15
+tox

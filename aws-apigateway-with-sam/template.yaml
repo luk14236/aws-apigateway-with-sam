@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  aws_data
+
+Parameters:
+  Stage:
+    Type: String
+    AllowedValues:
+      - dev
+      - stage
+      - prod
+    Description: The deployment stage for the application
+    Default: dev
+
+Mappings:
+  VpcIdMap:
+    dev:
+      VpcId: vpc-1234
+    prod:
+      VpcId: vpc-12345
+    stage:
+      VpcId: vpc-123456
+  SubnetIdsMap:
+    dev:
+      SubnetIds:
+        - subnet-123
+    prod:
+      SubnetIds:
+        - subnet-1234
+    stage:
+      SubnetIds:
+        - subnet-12345
+
+Globals:
+  Function:
+    Timeout: 900
+    Handler: app.lambda_handler
+    Runtime: python3.8
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        S3DATACATEGORY: datacategory-dev
+    VpcConfig:
+      SubnetIds:
+        !FindInMap [SubnetIdsMap, !Ref Stage, SubnetIds]
+      SecurityGroupIds:
+        - !Ref DataCategorySecurityGroup
+  Api:
+    Cors:
+      AllowMethods: "'OPTIONS,DELETE,PUT,POST'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'"
+
+Resources:
+  DataCategorySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: 
+        !FindInMap [VpcIdMap, !Ref Stage, VpcId]
+      GroupDescription: Allow http to client host
+      GroupName: securitygroup_datacategory
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/01
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: v1
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: !Join [ " ", [ { "Ref": "AWS::StackName" }, "usage plan" ] ]
+          Quota:
+            Limit: 100000
+            Period: DAY
+          Throttle:
+            BurstLimit: 1000
+            RateLimit: 100
+          UsagePlanName: !Join [ "", [ { "Ref": "AWS::StackName" }, "-usage-plan" ] ]
+      Models:
+        DataCategoryObj:
+          type: object
+          required:
+            - data_id
+            - data_name
+          properties:
+            data_id:
+              type: integer
+            data_name:
+              type: string
+  DataCategoryPost:
+      Type: AWS::Serverless::Function
+      Properties:
+        Policies:
+          - AmazonS3FullAccess
+          - AmazonRedshiftFullAccess
+          - AWSSecretsManagerGetSecretValuePolicy:
+              SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:SECRET_NAME"
+        FunctionName: datacategory_post
+        CodeUri: aws_datacategory/
+        Events:
+          DataCategoryPost:
+            Type: Api
+            Properties:
+              RequestModel:
+                Model: DataCategoryObj
+                Required: true
+                ValidateBody: true
+              Path: /datacategory
+              Method: post
+              RestApiId:
+                Ref: ApiGatewayApi
+              Auth:
+                ApiKeyRequired: true
+  DataCategoryPut:
+      Type: AWS::Serverless::Function
+      Properties:
+        Policies:
+          - AmazonS3FullAccess
+          - AmazonRedshiftFullAccess
+          - AWSSecretsManagerGetSecretValuePolicy:
+              SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:SECRET_NAME"
+        FunctionName: datacategory_put
+        CodeUri: aws_datacategory_put/
+        Events:
+          DataCategoryPut:
+            Type: Api
+            Properties:
+              RequestModel:
+                Model: DataCategoryObj
+                Required: true
+                ValidateBody: true
+              Path: /datacategory
+              Method: put
+              RestApiId:
+                Ref: ApiGatewayApi
+              Auth:
+                ApiKeyRequired: true
+  DataCategoryDelete:
+      Type: AWS::Serverless::Function
+      Properties:
+        Policies:
+          - AmazonS3FullAccess
+          - AmazonRedshiftFullAccess
+          - AWSSecretsManagerGetSecretValuePolicy:
+              SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:SECRET_NAME"
+        FunctionName: datacategory_delete
+        CodeUri: aws_datacategory_delete/
+        Events:
+          DataCategoryDelete:
+            Type: Api
+            Properties:
+              Path: /datacategory
+              Method: delete
+              RestApiId:
+                Ref: ApiGatewayApi
+              Auth:
+                ApiKeyRequired: true
+              RequestParameters:
+                - method.request.querystring.type_id:
+                    Required: true
